@@ -1,0 +1,69 @@
+std::string fileFolderPath(QFileDialog::getOpenFileName(this, "Select IMU Calibration", "./", "Text (*.txt)").toStdString());
+
+    //读取全站仪坐标系下的点的坐标
+    FILE* fp=fopen(fileFolderPath.c_str(),"rb");
+    FILE* fp2=fopen("imu_check.txt","w");
+    if(!fp)
+    {
+        qDebug() << "载入全站仪坐标系数据错误";
+        return;
+    }
+    float tmpx[2],tmpy[2],tmpz[2];
+    int tmpid[2];
+    int ret,vcount=0;
+    for (int i=0;i<2;i++)
+    {
+        ret=fscanf(fp,"%d %f %f %f\r\n",tmpid+i,tmpx+i,tmpy+i,tmpz+i);
+    }
+    //TotalStation_to_Vehicle
+    float x_1 = tmpx[0]-tmpx[1];
+    float x_2 = tmpy[0]-tmpy[1];
+    float norm_x;
+    norm_x = sqrt(x_1*x_1+x_2*x_2);
+    x_1 = x_1/norm_x;
+    x_2 = x_2/norm_x;
+
+    float origin_x = (tmpx[0]+tmpx[1])/2;
+    float origin_y = (tmpy[0]+tmpy[1])/2;
+    float origin_z = (tmpz[0]+tmpz[1])/2;
+
+    float yaw = 0.0;
+    if ((x_1>0)&(x_2>0)){yaw = abs(atan(x_1/x_2));}
+    else if((x_1<0)&(x_2>0)){yaw = -1 * abs(atan(x_1/x_2));}
+    else if((x_1<0)&(x_2<0)){yaw = -CV_PI + abs(atan(x_1/x_2));}
+    else if((x_1>0)&(x_2<0)){yaw = CV_PI - abs(atan(x_1/x_2));}
+
+    float t_1 = cos(yaw) * (-origin_x) - sin(yaw) * (-origin_y);
+    float t_2 = sin(yaw) * (-origin_x) + cos(yaw) * (-origin_y);
+
+    float x,y,z;
+    float z_fix[]={2.619, 2.207, 1.907, 1.61, 1.311, 0.96, 0.598, 2.635, 2.208, 1.782, 1.363, 0.956, 0.591, 1.493, 1.508, 1.893, 1.256, 1.279, 1.916};
+
+    int id;
+    float x_veh,y_veh,z_veh;
+
+    for(int i=0; i<200; i++)
+    {
+        ret=fscanf(fp,"%d %f %f %f\r\n",&id,&x,&y,&z);
+        if(ret>0)
+            vcount++;
+        else
+            break;
+        //TotalStation_to_Vehicle
+        x_veh = cos(yaw) * x - sin(yaw) * y + t_1;
+        y_veh = sin(yaw) * x + cos(yaw) * y + t_2;
+        if(ui->radioButton->isChecked())
+        {
+            z_veh = z_fix[i];
+        }
+        else
+        {
+            z_veh = z - origin_z;
+        }
+
+        fprintf(fp2,"%d %.3f %.3f %.3f\n",id,x_veh,y_veh,z_veh);
+    }
+    fclose(fp);
+    fclose(fp2);
+
+    qDebug() << QString("转换完成(输出全站仪坐标系下点个数：%1)\n").arg(QString::number(vcount));
